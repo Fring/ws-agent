@@ -1,7 +1,7 @@
 {
   "name": "ws-agent",
   "version": "1.0.0",
-  "description": "",
+  "description": "A simple generic REST agent that lets you create and manipulate websockets",
   "main": "index.js",
   "bin": {
     "ws-agent": "./bin/ws-agent.js"
