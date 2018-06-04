@@ -1,11 +1,20 @@
 const express = require('express')
 const bodyParser = require('body-parser')
-const { omit, find, remove, filter } = require('lodash/fp')
+const { omit, find, findIndex, filter, once } = require('lodash/fp')
 const { body, param, query } = require('express-validator/check')
 const dush = require('dush')
 const WebSocket = require('ws')
 const yargs = require('yargs')
 const debug = require('debug')('ws-bridge')
+
+yargs.usage('$0 [port]', 'Starts the WebSocket agent', yargs => {
+  yargs.positional('port', {
+    describe: 'Port to bind on',
+    default: 3000
+  })
+})
+
+const port = yargs.argv.port
 
 const app = express()
 
@@ -46,7 +55,7 @@ function createMessage (type, message, { connectionId, status = Status.CONNECTED
  * Function that takes a connection info, and returns a sanitized version that
  * includes only the metadata information of the connection.
  */
-const getConnectionMetadata = omit('ws')
+const getConnectionMetadata = omit(['ws', 'messages', 'addMessage'])
 
 /**
  * @typedef {Object} PostWebSocketsBody
@@ -54,6 +63,12 @@ const getConnectionMetadata = omit('ws')
  * @param {number=10} numRetainMessages The number of messages to retain in memory. Defaults to 10.
  * @param {number=0} timeout The amount of time in milliseconds to keep the web socket up. Default of 0 means infinite
  */
+
+app.get('/websockets', (req, res) => {
+  res.status(200).json({
+    connections: connections.map(getConnectionMetadata)
+  })
+})
 
 /**
  * Connection creation
@@ -69,13 +84,15 @@ app.post(
     body('numRetainMessages')
       .optional()
       .isInt({ min: 0 })
-      .withMessage('Must be a valid number greater or equal to 0 representing the number of messages to retain'),
+      .withMessage('Must be a valid number greater or equal to 0 representing the number of messages to retain')
+      .toInt(),
     body('timeout')
       .optional()
       .isInt({ min: 0 })
       .withMessage(
         'Must be a valid number greater or equal to 0 representing the number of milliseconds go keep the WebSocket alive'
       )
+      .toInt()
   ],
   (req, res) => {
     const connectionInfo = {
@@ -86,18 +103,26 @@ app.post(
       addMessage (type, message) {
         const msg = createMessage(type, message, this)
         this.messages.push(msg)
-        emitter.emit(`message:${this.id}`, { connectionId: this.id, newMessage: msg })
+        debug(`New Message: ${msg}`)
+        emitter.emit(`message:${this.id}`, { connectionId: this.id, message: msg })
       }
     }
-
     connections.push(connectionInfo)
+
+    emitter.once(`message:${connectionInfo.id}`, function ({ message }) {
+      let status = 500
+      if (message.status === Status.CONNECTED) {
+        status = 200
+      }
+
+      res.status(status).json(getConnectionMetadata(connectionInfo))
+    })
 
     const { ws } = connectionInfo
 
     ws.on('open', function wsOpen () {
       connectionInfo.status = Status.CONNECTED
       connectionInfo.addMessage(MessageType.STATUS, 'WebSocket Connected')
-      res.status(201).json(getConnectionMetadata(connectionInfo))
     })
 
     ws.on('error', function wsError (error) {
@@ -105,7 +130,6 @@ app.post(
       connectionInfo.statusCode = 500
       connectionInfo.statusMessage = error.message
       connectionInfo.addMessage(MessageType.STATUS, error.message)
-      res.status(500).json(getConnectionMetadata(connectionInfo))
     })
 
     ws.on('close', function wsClose (code, reason) {
@@ -113,7 +137,6 @@ app.post(
       connectionInfo.statusCode = code
       connectionInfo.statusMessage = reason
       connectionInfo.addMessage(MessageType.STATUS, reason)
-      res.status(500).json(getConnectionMetadata(connectionInfo))
     })
 
     ws.on('message', function wsMessage (data) {
@@ -128,16 +151,20 @@ app.delete(
     param('id')
       .isInt()
       .withMessage('Id parameter must be an integer.')
+      .toInt()
   ],
   (req, res) => {
-    const [removedItem] = remove({ id: req.params.id })
-    if (removedItem) {
+    const index = findIndex({ id: req.params.id }, connections)
+    if (index !== -1) {
+      // Pre-emptively remove the connection from the collection that way if something goes wrong we still
+      // don't have it show up.
+      const [removedItem] = connections.splice(index, 1)
+      removedItem.status = res.status(200).send({ id: removedItem.id, status: Status.DISCONNECTED })
+    } else {
+      debug(`Connection with id "${req.params.id}" not found.`)
       res.status(404).json({
         error: `Connection with id "${req.params.id}" not found.`
       })
-    } else {
-      removedItem.ws.close(200, 'User requested to close the websocket.')
-      res.status(200).end()
     }
   }
 )
@@ -147,33 +174,37 @@ app.get(
   [
     param('id')
       .isInt()
-      .withMessage('Id parameter must be an integer.'),
+      .withMessage('Id parameter must be an integer.')
+      .toInt(),
     query('pending')
       .optional()
       .isBoolean()
-      .withMessage('Pending parameter is a boolean and can only take the form of 0 (default), 1, true, false.'),
+      .withMessage('Pending parameter is a boolean and can only take the form of 0 (default), 1, true, false.')
+      .toBoolean(),
     query('wait')
       .optional()
       .isInt({ min: 0, max: 60 })
       .withMessage('Wait has to be a number of seconds from 0 (default) to 60.')
+      .toInt()
   ],
   (req, res) => {
-    const connection = find(connections, { id: req.params.id })
+    const connection = find({ id: req.params.id }, connections)
     if (!connection) {
+      debug(`Connection with id "${req.params.id}" not found.`)
       res.status(404).json({
         error: `Connection with id "${req.params.id}" not found.`
       })
       return
     }
 
-    const sendMessages = messages => {
+    const sendMessages = once(messages => {
       messages.forEach(message => {
         message.read = true
       })
       res.status(200).json({
         messages
       })
-    }
+    })
 
     if (req.query.pending) {
       let pendingMessages = filter(connection.messages, { read: false })
@@ -186,7 +217,7 @@ app.get(
           sendMessages(pendingMessages)
         }, req.query.wait * 1000)
 
-        emitter.once(`message:${req.params.id}`, function (event) {
+        emitter.once(`message:${req.params.id}`, function () {
           // We got a new event, clear the timeout and send new pending messages.
           clearTimeout(timeout)
 
@@ -205,15 +236,17 @@ app.post(
   [
     param('id')
       .isInt()
-      .withMessage('Id parameter must be an integer.'),
+      .withMessage('Id parameter must be an integer.')
+      .toInt(),
     body().withMessage('A body is required with this request')
   ],
   (req, res) => {
-    const connection = find({ id: req.params.id })
+    const connection = find({ id: req.params.id }, connections)
     if (connection) {
       connection.addMessage(MessageType.OUTGOING, req.body)
       res.status(201)
     } else {
+      debug(`Connection with id "${req.params.id}" not found.`)
       res.status(404).json({
         error: `Connection with id "${req.params.id}" not found.`
       })
@@ -221,4 +254,4 @@ app.post(
   }
 )
 
-app.listen(3000, () => console.log('wsTest is listening on port 3000!'))
+app.listen(port, () => console.log(`ws-agent is listening on port ${port}!`))
