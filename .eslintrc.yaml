@@ -1,0 +1,16 @@
+extends:
+  - standard
+  - prettier/standard
+plugins:
+  - standard
+parserOptions:
+  ecmaVersion: 2018
+rules:
+# This rule is only here to configure prettier-standard to use 120 columns for line packing.
+  max-len:
+    - error
+    - code: 120
+      ignoreComments: true
+      ignoreStrings: true
+      ignoreTemplateLiterals: true
+      ignoreRegExpLiterals: true
