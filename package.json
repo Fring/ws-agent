@@ -1,8 +1,11 @@
 {
-  "name": "testws",
+  "name": "ws-agent",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "bin": {
+    "ws-agent": "./bin/ws-agent.js"
+  },
   "scripts": {
     "format": "prettier-standard '/**/*.js'",
     "lint": "eslint .",
