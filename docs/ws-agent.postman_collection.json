@@ -1,0 +1,189 @@
+{
+  "info": {
+    "_postman_id": "cb87ed89-c09d-4c78-9ff8-0238f11db96f",
+    "name": "ws-agent",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "websockets",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "id": "f336890e-3b6e-4e0a-90bf-db981d14a652",
+            "type": "text/javascript",
+            "exec": ["", "", ""]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {},
+        "url": {
+          "raw": "http://localhost:{{port}}/websockets",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "{{port}}",
+          "path": ["websockets"]
+        },
+        "description": "Gets the list of websockets"
+      },
+      "response": []
+    },
+    {
+      "name": "websockets",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "id": "198763f7-c9a4-4408-b780-56723edc77b8",
+            "type": "text/javascript",
+            "exec": ["var data = JSON.parse(responseBody);", "pm.environment.set(\"lastWsId\", data.id);", "", "", ""]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n\t\"url\": \"wss://echo.websocket.org\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:{{port}}/websockets",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "{{port}}",
+          "path": ["websockets"]
+        },
+        "description": "Gets the list of websockets"
+      },
+      "response": []
+    },
+    {
+      "name": "websockets/:id",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "body": {},
+        "url": {
+          "raw": "http://localhost:{{port}}/websockets/{{lastWsId}}",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "{{port}}",
+          "path": ["websockets", "{{lastWsId}}"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "websockets/:id/messages",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {},
+        "url": {
+          "raw": "http://localhost:{{port}}/websockets/{{lastWsId}}/messages",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "{{port}}",
+          "path": ["websockets", "{{lastWsId}}", "messages"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "websockets/:id/messages pending",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {},
+        "url": {
+          "raw": "http://localhost:{{port}}/websockets/{{lastWsId}}/messages?pending=true",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "{{port}}",
+          "path": ["websockets", "{{lastWsId}}", "messages"],
+          "query": [
+            {
+              "key": "pending",
+              "value": "true"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "websockets/:id/messages wait",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "body": {},
+        "url": {
+          "raw": "http://localhost:{{port}}/websockets/{{lastWsId}}/messages?pending=true&wait=30&debounce=100",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "{{port}}",
+          "path": ["websockets", "{{lastWsId}}", "messages"],
+          "query": [
+            {
+              "key": "pending",
+              "value": "true"
+            },
+            {
+              "key": "wait",
+              "value": "30"
+            },
+            {
+              "key": "debounce",
+              "value": "100"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "websockets/:id/messages",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "id": "63d95986-715e-443a-bd47-9a012e3fb053",
+            "type": "text/javascript",
+            "exec": ["", ""]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "text/plain"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n\t\"Something great\" : \"message\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:{{port}}/websockets/{{lastWsId}}/messages",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "{{port}}",
+          "path": ["websockets", "{{lastWsId}}", "messages"]
+        }
+      },
+      "response": []
+    }
+  ]
+}
