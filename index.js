@@ -1,7 +1,8 @@
 const express = require('express')
 const bodyParser = require('body-parser')
 const { omit, find, findIndex, filter, once } = require('lodash/fp')
-const { body, param, query } = require('express-validator/check')
+const { debounce } = require('lodash')
+const { body, header, param, query, validationResult } = require('express-validator/check')
 const dush = require('dush')
 const WebSocket = require('ws')
 const yargs = require('yargs')
@@ -20,6 +21,16 @@ const app = express()
 
 app.use(bodyParser.json()) // for parsing application/json
 app.use(bodyParser.urlencoded({ extended: true })) // for parsing application/x-www-form-urlencoded
+app.use(bodyParser.text()) // for parsing application/x-www-form-urlencoded
+
+// Middleware for validating parameters
+function validate (req, res, next) {
+  const errors = validationResult(req)
+  if (!errors.isEmpty()) {
+    return res.status(422).json({ errors: errors.array() })
+  }
+  next()
+}
 
 const connections = []
 let connectionId = 0
@@ -60,8 +71,7 @@ const getConnectionMetadata = omit(['ws', 'messages', 'addMessage'])
 /**
  * @typedef {Object} PostWebSocketsBody
  * @param {string} url The url to connect to.
- * @param {number=10} numRetainMessages The number of messages to retain in memory. Defaults to 10.
- * @param {number=0} timeout The amount of time in milliseconds to keep the web socket up. Default of 0 means infinite
+ * @param {number} [numRetainMessages=100] The number of messages to retain in memory. Defaults to 10.
  */
 
 app.get('/websockets', (req, res) => {
@@ -78,8 +88,11 @@ app.get('/websockets', (req, res) => {
 app.post(
   '/websockets',
   [
+    header('Content-Type')
+      .equals('application/json')
+      .withMessage('Can only accept Content-Type of application/json'),
     body('url')
-      .isURL({ protocol: ['ws', 'wss'] })
+      .isURL({ protocols: ['wss', 'ws'] })
       .withMessage('Must be a valid WebSocket URL'),
     body('numRetainMessages')
       .optional()
@@ -92,7 +105,8 @@ app.post(
       .withMessage(
         'Must be a valid number greater or equal to 0 representing the number of milliseconds go keep the WebSocket alive'
       )
-      .toInt()
+      .toInt(),
+    validate
   ],
   (req, res) => {
     const connectionInfo = {
@@ -150,8 +164,9 @@ app.delete(
   [
     param('id')
       .isInt()
-      .withMessage('Id parameter must be an integer.')
-      .toInt()
+      .withMessage('id parameter must be an integer.')
+      .toInt(),
+    validate
   ],
   (req, res) => {
     const index = findIndex({ id: req.params.id }, connections)
@@ -170,22 +185,33 @@ app.delete(
 )
 
 app.get(
-  '/websockets/:id/messages?pending&wait',
+  '/websockets/:id/messages',
   [
     param('id')
       .isInt()
-      .withMessage('Id parameter must be an integer.')
+      .withMessage('id parameter must be an integer.')
       .toInt(),
     query('pending')
       .optional()
       .isBoolean()
-      .withMessage('Pending parameter is a boolean and can only take the form of 0 (default), 1, true, false.')
+      .withMessage('pending parameter is a boolean and can only take the form of 0 (default), 1, true, false.')
       .toBoolean(),
     query('wait')
       .optional()
       .isInt({ min: 0, max: 60 })
-      .withMessage('Wait has to be a number of seconds from 0 (default) to 60.')
-      .toInt()
+      .withMessage('wait has to be a number of seconds from 0 (default) to 60.')
+      .toInt(),
+    query('debounce')
+      .optional()
+      .isInt({ min: 0 })
+      .withMessage('debounce has to be a number of milliseconds greater than 0 (default)')
+      .toInt(),
+    query('debounceMax')
+      .optional()
+      .isInt({ min: 0 })
+      .withMessage('debounceMax has to be a number of milliseconds greater than 0 (default)')
+      .toInt(),
+    validate
   ],
   (req, res) => {
     const connection = find({ id: req.params.id }, connections)
@@ -197,36 +223,50 @@ app.get(
       return
     }
 
-    const sendMessages = once(messages => {
-      messages.forEach(message => {
+    const sendPendingMessages = once(() => {
+      const pendingMessages = filter({ read: false }, connection.messages)
+      pendingMessages.forEach(message => {
         message.read = true
       })
       res.status(200).json({
-        messages
+        messages: pendingMessages
       })
     })
 
     if (req.query.pending) {
-      let pendingMessages = filter(connection.messages, { read: false })
-      if (pendingMessages) {
-        sendMessages(pendingMessages)
-      } else if (req.query.wait > 0) {
+      let pendingMessages = filter({ read: false }, connection.messages)
+      if ((!pendingMessages.length && req.query.wait > 0) || req.query.debounce > 0) {
         let timeout
+
+        const eventHandler = debounce(
+          function () {
+            clearTimeout(timeout)
+            emitter.off(`message:${req.params.id}`, eventHandler)
+            sendPendingMessages()
+          },
+          req.query.debounce || 0,
+          {
+            maxWait: req.query.debounceMax
+          }
+        )
+
+        const wait =
+          pendingMessages.length > 0 ? req.query.debounce || 0 : Math.max(req.query.wait * 1000, req.query.debounce)
+
         timeout = setTimeout(function () {
+          // Cancel the debounce handler.
+          eventHandler.cancel()
+
           // Send what we have. This might be an empty array.
-          sendMessages(pendingMessages)
-        }, req.query.wait * 1000)
+          sendPendingMessages()
+        }, wait)
 
-        emitter.once(`message:${req.params.id}`, function () {
-          // We got a new event, clear the timeout and send new pending messages.
-          clearTimeout(timeout)
-
-          pendingMessages = filter(connection.messages, { read: false })
-          sendMessages(pendingMessages)
-        })
+        emitter.on(`message:${req.params.id}`, eventHandler)
+      } else {
+        sendPendingMessages()
       }
     } else {
-      sendMessages(connection.messages)
+      sendPendingMessages()
     }
   }
 )
@@ -234,17 +274,22 @@ app.get(
 app.post(
   '/websockets/:id/messages',
   [
+    header('Content-Type')
+      .equals('text/plain')
+      .withMessage('Can only accept Content-Type of text/plain'),
     param('id')
       .isInt()
-      .withMessage('Id parameter must be an integer.')
+      .withMessage('id parameter must be an integer.')
       .toInt(),
-    body().withMessage('A body is required with this request')
+    body().withMessage('A body is required with this request'),
+    validate
   ],
   (req, res) => {
     const connection = find({ id: req.params.id }, connections)
     if (connection) {
       connection.addMessage(MessageType.OUTGOING, req.body)
-      res.status(201)
+      connection.ws.send(req.body)
+      res.status(201).end()
     } else {
       debug(`Connection with id "${req.params.id}" not found.`)
       res.status(404).json({
