@@ -11,8 +11,8 @@
     "lint": "eslint .",
     "start": "node index.js"
   },
-  "author": "Jean-Yves Boudreau",
-  "license": "MIT",
+  "author": "Kandy.io Team",
+  "license": "SEE LICENSE IN LICENSE.md",
   "dependencies": {
     "body-parser": "^1.18.3",
     "debug": "^3.1.0",
