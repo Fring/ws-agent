@@ -9,7 +9,7 @@
   "scripts": {
     "format": "prettier-standard '/**/*.js'",
     "lint": "eslint .",
-    "start": "node index.js"
+    "start": "node lib/index.js"
   },
   "author": "Kandy.io Team",
   "license": "SEE LICENSE IN LICENSE.md",
