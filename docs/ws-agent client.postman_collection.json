@@ -1,0 +1,179 @@
+{
+	"info": {
+		"_postman_id": "73499934-f1b3-4ac3-8de0-2ed7e8d123e2",
+		"name": "ws-agent client",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Send Message",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "22d35cdd-0346-4838-99f5-f2eb56db2d1a",
+						"type": "text/javascript",
+						"exec": [
+							"",
+							"const wsRequest = {",
+							"  url: 'http://localhost:3000/websockets/',",
+							"  method: 'POST',",
+							"  header: 'Content-Type:application/json',",
+							"  body: {",
+							"    mode: 'raw',",
+							"    raw: JSON.stringify({ url: 'wss://echo.websocket.org' })",
+							"  }",
+							"}",
+							"",
+							"pm.sendRequest(wsRequest, function (err, res) {",
+							"  if (err) {",
+							"    console.log(err)",
+							"    return",
+							"  }",
+							"  const data = res.json()",
+							"  pm.environment.set(\"lastWsId\", data.id);",
+							"})",
+							"",
+							"",
+							""
+						]
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"id": "9ec6f6d9-eac1-457d-9655-228d41990c2f",
+						"type": "text/javascript",
+						"exec": [
+							"const lastWsId = pm.environment.get(\"lastWsId\");",
+							"",
+							"let wsResult",
+							"",
+							"pm.sendRequest(`http://localhost:3000/websockets/${lastWsId}/messages?pending=true&wait=10&debounce=100&debounceMax=500`, function(err, res) {",
+							"    pm.test('response should be okay to process', function () {",
+							"        pm.expect(err).to.equal(null);",
+							"        pm.expect(res).to.have.property('code', 200);",
+							"    });",
+							"    ",
+							"    const response = res.json()",
+							"    ",
+							"    pm.test('response contains outbound message', function() {",
+							"      pm.expect(_.find(response.messages, {type: \"OUTGOING\", message: pm.request.body.raw})).to.be.ok",
+							"    })",
+							"    ",
+							"    pm.test('response contains inbound message', function() {",
+							"      pm.expect(_.find(response.messages, {type: \"INCOMING\", message: pm.request.body.raw})).to.be.ok",
+							"    })",
+							"    ",
+							"    pm.sendRequest({",
+							"      url: `http://localhost:3000/websockets/${lastWsId}`,",
+							"      method: 'DELETE',",
+							"    }, function(err, res) {",
+							"        pm.test('websocket properly closed', function() {",
+							"          pm.expect(err).to.equal(null);",
+							"          pm.expect(res).to.have.property('code', 200);",
+							"        })",
+							"    })",
+							"})",
+							"",
+							"",
+							"",
+							""
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "text/plain"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "This is a message"
+				},
+				"url": {
+					"raw": "http://localhost:{{port}}/websockets/{{lastWsId}}/messages",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{port}}",
+					"path": [
+						"websockets",
+						"{{lastWsId}}",
+						"messages"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Websockets",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "df153bb1-40f2-4d6e-9d6e-3e4a10aca525",
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "text/plain"
+					}
+				],
+				"body": {},
+				"url": {
+					"raw": "http://localhost:{{port}}/websockets/",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "{{port}}",
+					"path": [
+						"websockets",
+						""
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"id": "dab73be5-d22b-4ec7-9cd1-68db6c5c1ed8",
+				"type": "text/javascript",
+				"exec": [
+					"function test() {",
+					"    console.log('test folder')",
+					"}",
+					"",
+					"console.log('folder')"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"id": "74a3ff92-98db-47e4-984b-13ac0578bd2c",
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}
