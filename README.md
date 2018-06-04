@@ -13,3 +13,7 @@ or
 ```
 $ yarn global add Fring/ws-agent
 ```
+
+## Usage
+
+See the [postman collection](docs/ws-agent.postman_collection.json) in the docs for usage.
